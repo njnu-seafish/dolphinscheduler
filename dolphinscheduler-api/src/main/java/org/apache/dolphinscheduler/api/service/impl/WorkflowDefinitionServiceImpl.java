@@ -148,7 +148,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -170,7 +172,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -1599,160 +1600,116 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
     }
 
     /**
-     * Updates task code references in all CONDITIONS-type tasks within the given list.
-     * Specifically replaces:
-     *   - {@code depTaskCode} in each {@code ConditionDependentItem}
-     *   - node IDs in {@code successNode} and {@code failedNode}
-     * using the provided mapping from old task codes to new ones.
-     * <p>
-     * Unmapped codes are left unchanged. The updated parameters are serialized back
-     * into the {@code taskParams} field of each matching task log.
-     *
-     * @param taskDefinitionLogList list of task definition logs to process
-     * @param taskCodeMap           mapping from old task code to new task code (non-null)
-     * @param result                result context for error reporting
-     * @return {@code true} if all CONDITIONS tasks were processed successfully;
-     *         {@code false} if any task parameter failed to parse (error already set in {@code result})
+     * Update task code refs in CONDITIONS tasks:
+     * - depTaskCode in ConditionDependentItem
+     * - successNode / failedNode
      */
-    private boolean updateConditionTaskReferences(
-                                                  List<TaskDefinitionLog> taskDefinitionLogList,
-                                                  Map<Long, Long> taskCodeMap,
+    private boolean updateConditionTaskReferences(List<TaskDefinitionLog> taskDefinitionLogs, Map<Long, Long> codeMap,
                                                   Map<String, Object> result) {
-
-        for (TaskDefinitionLog taskLog : taskDefinitionLogList) {
-            if (!"CONDITIONS".equals(taskLog.getTaskType())) {
+        for (TaskDefinitionLog taskDefinitionLog : taskDefinitionLogs) {
+            if (!"CONDITIONS".equals(taskDefinitionLog.getTaskType()))
                 continue;
-            }
 
-            ConditionsParameters params = JSONUtils.parseObject(
-                    taskLog.getTaskParams(),
-                    new TypeReference<ConditionsParameters>() {
-                    });
-
+            ConditionsParameters params =
+                    JSONUtils.parseObject(taskDefinitionLog.getTaskParams(), ConditionsParameters.class);
             if (params == null) {
-                log.warn("Failed to parse taskParams for CONDITIONS task: {}", taskLog.getTaskParams());
+                log.warn("Invalid taskParams for CONDITIONS: {}", taskDefinitionLog.getTaskParams());
                 putMsg(result, Status.DATA_IS_NOT_VALID, "taskParams");
                 return false;
             }
 
-            updateDependenceTaskCodes(params, taskCodeMap);
-            updateConditionResultNodes(params, taskCodeMap);
+            updateDependenceTaskCodes(params, codeMap);
+            replaceResultNodes(params.getConditionResult(), codeMap);
 
-            taskLog.setTaskParams(JSONUtils.toJsonString(params));
+            taskDefinitionLog.setTaskParams(JSONUtils.toJsonString(params));
         }
         return true;
     }
 
-    /**
-     * Replaces {@code depTaskCode} in all dependent items using the given code mapping.
-     */
-    private void updateDependenceTaskCodes(ConditionsParameters params, Map<Long, Long> taskCodeMap) {
-        ConditionsParameters.ConditionDependency dependence = params.getDependence();
-        if (dependence == null || CollectionUtils.isEmpty(dependence.getDependTaskList())) {
+    private void updateDependenceTaskCodes(ConditionsParameters params, Map<Long, Long> codeMap) {
+        ConditionsParameters.ConditionDependency dep = params.getDependence();
+        if (dep == null || dep.getDependTaskList() == null)
             return;
-        }
 
-        for (ConditionDependentTaskModel dependTask : dependence.getDependTaskList()) {
-            if (CollectionUtils.isEmpty(dependTask.getDependItemList())) {
+        for (ConditionDependentTaskModel task : dep.getDependTaskList()) {
+            if (task.getDependItemList() == null)
                 continue;
-            }
-            for (ConditionDependentItem item : dependTask.getDependItemList()) {
-                Long oldCode = item.getDepTaskCode();
-                if (taskCodeMap.containsKey(oldCode)) {
-                    item.setDepTaskCode(taskCodeMap.get(oldCode));
+            for (ConditionDependentItem item : task.getDependItemList()) {
+                Long newCode = codeMap.get(item.getDepTaskCode());
+                if (newCode != null) {
+                    item.setDepTaskCode(newCode);
                 }
             }
         }
     }
 
     /**
-     * Replaces node IDs in {@code successNode} and {@code failedNode} lists using the given mapping.
+     * Update task code refs in SWITCH tasks:
+     * - nextBranch
+     * - switchResult.nextNode (default)
+     * - switchResult.dependTaskList[*].nextNode (branches)
      */
-    private void updateConditionResultNodes(ConditionsParameters params, Map<Long, Long> taskCodeMap) {
-        ConditionsParameters.ConditionResult result = params.getConditionResult();
-        if (result == null) {
-            return;
-        }
-
-        // Update success branch
-        if (CollectionUtils.isNotEmpty(result.getSuccessNode())) {
-            List<Long> updatedSuccess = result.getSuccessNode().stream()
-                    .map(code -> taskCodeMap.getOrDefault(code, code))
-                    .collect(Collectors.toList());
-            result.setSuccessNode(updatedSuccess);
-        }
-
-        // Update failure branch
-        if (CollectionUtils.isNotEmpty(result.getFailedNode())) {
-            List<Long> updatedFailed = result.getFailedNode().stream()
-                    .map(code -> taskCodeMap.getOrDefault(code, code))
-                    .collect(Collectors.toList());
-            result.setFailedNode(updatedFailed);
-        }
-    }
-
-    /**
-     * Updates task code references in all SWITCH-type tasks within the given list.
-     * Specifically replaces:
-     *   - {@code nextBranch} at the top level of SwitchParameters
-     *   - {@code nextNode} in the default branch (switchResult.nextNode)
-     *   - {@code nextNode} in each conditional branch (switchResult.dependTaskList[*].nextNode)
-     * using the provided mapping from old task codes to new ones.
-     *
-     * @param taskDefinitionLogList list of task definition logs to process
-     * @param taskCodeMap           mapping from old task code to new task code
-     * @param result                result context for error reporting
-     * @return {@code true} if all SWITCH tasks were processed successfully;
-     *         {@code false} if any task parameter failed to parse (error already set in {@code result})
-     */
-    private boolean updateSwitchTaskReferences(
-                                               List<TaskDefinitionLog> taskDefinitionLogList,
-                                               Map<Long, Long> taskCodeMap,
+    private boolean updateSwitchTaskReferences(List<TaskDefinitionLog> taskDefinitionLogs, Map<Long, Long> codeMap,
                                                Map<String, Object> result) {
-
-        for (TaskDefinitionLog taskDefinitionLog : taskDefinitionLogList) {
-            if (!"SWITCH".equals(taskDefinitionLog.getTaskType())) {
+        for (TaskDefinitionLog taskDefinitionLog : taskDefinitionLogs) {
+            if (!"SWITCH".equals(taskDefinitionLog.getTaskType()))
                 continue;
-            }
 
-            SwitchParameters switchParams = JSONUtils.parseObject(
-                    taskDefinitionLog.getTaskParams(),
-                    new TypeReference<SwitchParameters>() {
-                    });
-
-            if (switchParams == null) {
-                log.warn("Failed to parse taskParams for SWITCH task: {}", taskDefinitionLog.getTaskParams());
+            SwitchParameters p = JSONUtils.parseObject(taskDefinitionLog.getTaskParams(), SwitchParameters.class);
+            if (p == null) {
+                log.warn("Invalid taskParams for SWITCH: {}", taskDefinitionLog.getTaskParams());
                 putMsg(result, Status.DATA_IS_NOT_VALID, "taskParams");
                 return false;
             }
 
-            // Update top-level nextBranch
-            if (switchParams.getNextBranch() != null && taskCodeMap.containsKey(switchParams.getNextBranch())) {
-                switchParams.setNextBranch(taskCodeMap.get(switchParams.getNextBranch()));
+            // Top-level nextBranch
+            Long nextBranch = p.getNextBranch();
+            if (nextBranch != null) {
+                p.setNextBranch(codeMap.getOrDefault(nextBranch, nextBranch));
             }
 
-            // Update switchResult block
-            SwitchParameters.SwitchResult switchResult = switchParams.getSwitchResult();
-            if (switchResult != null) {
+            SwitchParameters.SwitchResult res = p.getSwitchResult();
+            if (res != null) {
                 // Default branch
-                if (switchResult.getNextNode() != null && taskCodeMap.containsKey(switchResult.getNextNode())) {
-                    switchResult.setNextNode(taskCodeMap.get(switchResult.getNextNode()));
+                Long defaultNext = res.getNextNode();
+                if (defaultNext != null) {
+                    res.setNextNode(codeMap.getOrDefault(defaultNext, defaultNext));
                 }
 
                 // Conditional branches
-                if (CollectionUtils.isNotEmpty(switchResult.getDependTaskList())) {
-                    for (SwitchResultVo vo : switchResult.getDependTaskList()) {
-                        if (vo != null && vo.getNextNode() != null && taskCodeMap.containsKey(vo.getNextNode())) {
-                            vo.setNextNode(taskCodeMap.get(vo.getNextNode()));
+                List<SwitchResultVo> branches = res.getDependTaskList();
+                if (branches != null) {
+                    for (SwitchResultVo vo : branches) {
+                        if (vo != null && vo.getNextNode() != null) {
+                            vo.setNextNode(codeMap.getOrDefault(vo.getNextNode(), vo.getNextNode()));
                         }
                     }
                 }
             }
 
-            // Persist changes
-            taskDefinitionLog.setTaskParams(JSONUtils.toJsonString(switchParams));
+            taskDefinitionLog.setTaskParams(JSONUtils.toJsonString(p));
         }
         return true;
+    }
+
+    // Shared helper for CONDITIONS result node lists
+    private void replaceResultNodes(ConditionsParameters.ConditionResult result, Map<Long, Long> codeMap) {
+        if (result == null)
+            return;
+        replaceNodeList(result::getSuccessNode, result::setSuccessNode, codeMap);
+        replaceNodeList(result::getFailedNode, result::setFailedNode, codeMap);
+    }
+
+    private void replaceNodeList(Supplier<List<Long>> getter, Consumer<List<Long>> setter, Map<Long, Long> codeMap) {
+        List<Long> list = getter.get();
+        if (list == null || list.isEmpty())
+            return;
+
+        List<Long> updated = new ArrayList<>(list.size());
+        for (Long code : list) {
+            updated.add(codeMap.getOrDefault(code, code));
+        }
+        setter.accept(updated);
     }
 
     /**
