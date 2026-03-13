@@ -264,4 +264,10 @@ public class WorkflowAlertManager {
         ProjectUser projectUser = projectDao.queryProjectWithUserByWorkflowInstanceId(workflowInstance.getId());
         alertDao.sendTaskTimeoutAlert(workflowInstance, taskInstance, projectUser);
     }
+
+    public void sendWorkflowTimeoutAlert(WorkflowInstance workflowInstance) {
+        ProjectUser projectUser = projectDao.queryProjectWithUserByWorkflowInstanceId(workflowInstance.getId());
+        alertDao.sendWorkflowTimeoutAlert(workflowInstance, projectUser);
+    }
+
 }
