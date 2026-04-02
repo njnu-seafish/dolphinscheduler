@@ -47,10 +47,6 @@ public class WorkflowTimeoutLifecycleEventHandler
                        final IWorkflowExecutionRunnable workflowExecutionRunnable,
                        final WorkflowTimeoutLifecycleEvent workflowTimeoutLifecycleEvent) {
         final IWorkflowExecutionGraph workflowExecutionGraph = workflowExecutionRunnable.getWorkflowExecutionGraph();
-        if (workflowExecutionGraph.isAllTaskExecutionRunnableChainFinish()) {
-            // all the TaskExecutionRunnable chain in the graph is finish, means the workflow is already finished.
-            return;
-        }
 
         final WorkflowInstance workflowInstance = workflowExecutionRunnable.getWorkflowInstance();
         final boolean shouldSendAlert = workflowInstance.getWarningGroupId() != null;
