@@ -258,8 +258,11 @@ public class DataSourceServiceTest {
                 MockedStatic<DataSourceUtils> mockedStaticDataSourceUtils =
                         Mockito.mockStatic(DataSourceUtils.class, Mockito.CALLS_REAL_METHODS)) {
             DataSourceProcessor dataSourceProcessor = Mockito.mock(DataSourceProcessor.class);
+            ConnectionParam connectionParam = Mockito.mock(ConnectionParam.class);
             mockedStaticDataSourceUtils.when(() -> DataSourceUtils.getDatasourceProcessor(Mockito.any()))
                     .thenReturn(dataSourceProcessor);
+            when(dataSourceProcessor.createConnectionParams(Mockito.any(BaseDataSourceParamDTO.class)))
+                    .thenReturn(connectionParam);
             when(dataSourceProcessor.checkDataSourceConnectivity(Mockito.any())).thenReturn(false);
 
             assertThrowsServiceException(Status.CONNECTION_TEST_FAILURE,
@@ -295,8 +298,12 @@ public class DataSourceServiceTest {
                 MockedStatic<DataSourceUtils> mockedStaticDataSourceUtils =
                         Mockito.mockStatic(DataSourceUtils.class, Mockito.CALLS_REAL_METHODS)) {
             DataSourceProcessor dataSourceProcessor = Mockito.mock(DataSourceProcessor.class);
+            ConnectionParam connectionParam = Mockito.mock(ConnectionParam.class);
             mockedStaticDataSourceUtils.when(() -> DataSourceUtils.getDatasourceProcessor(Mockito.any()))
                     .thenReturn(dataSourceProcessor);
+            when(connectionParam.getPassword()).thenReturn("postgres");
+            when(dataSourceProcessor.createConnectionParams(Mockito.any(BaseDataSourceParamDTO.class)))
+                    .thenReturn(connectionParam);
             when(dataSourceProcessor.checkDataSourceConnectivity(Mockito.any())).thenReturn(false);
 
             assertThrowsServiceException(Status.CONNECTION_TEST_FAILURE,
