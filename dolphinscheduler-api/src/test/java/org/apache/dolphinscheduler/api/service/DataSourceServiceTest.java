@@ -74,6 +74,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 
@@ -233,6 +234,72 @@ public class DataSourceServiceTest {
             // Duplicated Key Exception
             when(dataSourceDao.updateById(Mockito.any(DataSource.class))).thenThrow(DuplicateKeyException.class);
             assertThrowsServiceException(Status.DATASOURCE_EXIST,
+                    () -> dataSourceService.updateDataSource(loginUser, postgreSqlDatasourceParam));
+        }
+    }
+
+    @Test
+    public void createDataSourceChecksConnectionWhenConfigured() {
+        User loginUser = getAdminUser();
+        PostgreSQLDataSourceParamDTO postgreSqlDatasourceParam = new PostgreSQLDataSourceParamDTO();
+        postgreSqlDatasourceParam.setDatabase("dolphinscheduler");
+        postgreSqlDatasourceParam.setNote("test dataSource");
+        postgreSqlDatasourceParam.setHost("172.16.133.200");
+        postgreSqlDatasourceParam.setPort(5432);
+        postgreSqlDatasourceParam.setUserName("postgres");
+        postgreSqlDatasourceParam.setPassword("postgres");
+        postgreSqlDatasourceParam.setName("dataSource01");
+
+        ReflectionTestUtils.setField(dataSourceService, "connectionTestOnSaveEnabled", true);
+        passResourcePermissionCheckService();
+        when(dataSourceDao.queryDataSourceByName(postgreSqlDatasourceParam.getName().trim())).thenReturn(null);
+
+        try (
+                MockedStatic<DataSourceUtils> mockedStaticDataSourceUtils =
+                        Mockito.mockStatic(DataSourceUtils.class, Mockito.CALLS_REAL_METHODS)) {
+            DataSourceProcessor dataSourceProcessor = Mockito.mock(DataSourceProcessor.class);
+            mockedStaticDataSourceUtils.when(() -> DataSourceUtils.getDatasourceProcessor(Mockito.any()))
+                    .thenReturn(dataSourceProcessor);
+            when(dataSourceProcessor.checkDataSourceConnectivity(Mockito.any())).thenReturn(false);
+
+            assertThrowsServiceException(Status.CONNECTION_TEST_FAILURE,
+                    () -> dataSourceService.createDataSource(loginUser, postgreSqlDatasourceParam));
+        }
+    }
+
+    @Test
+    public void updateDataSourceChecksConnectionWhenConfigured() {
+        User loginUser = getAdminUser();
+        int dataSourceId = 12;
+        PostgreSQLDataSourceParamDTO postgreSqlDatasourceParam = new PostgreSQLDataSourceParamDTO();
+        postgreSqlDatasourceParam.setId(dataSourceId);
+        postgreSqlDatasourceParam.setDatabase("dolphinscheduler");
+        postgreSqlDatasourceParam.setNote("test dataSource");
+        postgreSqlDatasourceParam.setHost("172.16.133.200");
+        postgreSqlDatasourceParam.setPort(5432);
+        postgreSqlDatasourceParam.setUserName("postgres");
+        postgreSqlDatasourceParam.setPassword("postgres");
+        postgreSqlDatasourceParam.setName("dataSource01-update");
+
+        DataSource dataSource = new DataSource();
+        dataSource.setId(dataSourceId);
+        dataSource.setName("dataSource01");
+        dataSource.setType(DbType.POSTGRESQL);
+
+        ReflectionTestUtils.setField(dataSourceService, "connectionTestOnSaveEnabled", true);
+        passResourcePermissionCheckService();
+        when(dataSourceDao.queryById(dataSourceId)).thenReturn(dataSource);
+        when(dataSourceDao.queryDataSourceByName(postgreSqlDatasourceParam.getName())).thenReturn(null);
+
+        try (
+                MockedStatic<DataSourceUtils> mockedStaticDataSourceUtils =
+                        Mockito.mockStatic(DataSourceUtils.class, Mockito.CALLS_REAL_METHODS)) {
+            DataSourceProcessor dataSourceProcessor = Mockito.mock(DataSourceProcessor.class);
+            mockedStaticDataSourceUtils.when(() -> DataSourceUtils.getDatasourceProcessor(Mockito.any()))
+                    .thenReturn(dataSourceProcessor);
+            when(dataSourceProcessor.checkDataSourceConnectivity(Mockito.any())).thenReturn(false);
+
+            assertThrowsServiceException(Status.CONNECTION_TEST_FAILURE,
                     () -> dataSourceService.updateDataSource(loginUser, postgreSqlDatasourceParam));
         }
     }

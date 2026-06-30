@@ -59,6 +59,7 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,6 +77,9 @@ public class DataSourceServiceImpl extends BaseServiceImpl implements DataSource
 
     @Autowired
     private DataSourceUserDao datasourceUserDao;
+
+    @Value("${datasource.connection-test-on-save:false}")
+    private boolean connectionTestOnSaveEnabled;
 
     private static final String TABLE = "TABLE";
     private static final String VIEW = "VIEW";
@@ -98,6 +102,10 @@ public class DataSourceServiceImpl extends BaseServiceImpl implements DataSource
             throw new ServiceException(Status.DESCRIPTION_TOO_LONG_ERROR);
         }
         ConnectionParam connectionParam = DataSourceUtils.buildConnectionParams(datasourceParam);
+
+        if (connectionTestOnSaveEnabled) {
+            checkConnection(datasourceParam.getType(), connectionParam);
+        }
 
         // build datasource
         DataSource dataSource = new DataSource();
@@ -140,15 +148,10 @@ public class DataSourceServiceImpl extends BaseServiceImpl implements DataSource
         if (checkDescriptionLength(dataSourceParam.getNote())) {
             throw new ServiceException(Status.DESCRIPTION_TOO_LONG_ERROR);
         }
-        // check password，if the password is not updated, set to the old password.
         ConnectionParam connectionParam = DataSourceUtils.buildConnectionParams(dataSourceParam);
 
-        String password = connectionParam.getPassword();
-
-        if (StringUtils.isBlank(password)) {
-            String oldConnectionParams = dataSource.getConnectionParams();
-            ObjectNode oldParams = JSONUtils.parseObject(oldConnectionParams);
-            connectionParam.setPassword(oldParams.path(Constants.PASSWORD).asText());
+        if (connectionTestOnSaveEnabled) {
+            checkConnection(dataSourceParam.getType(), connectionParam);
         }
 
         Date now = new Date();

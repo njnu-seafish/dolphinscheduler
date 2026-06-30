@@ -639,11 +639,7 @@ const DetailModal = defineComponent({
                     class='input-password'
                     v-model={[detailForm.password, 'value']}
                     type='password'
-                    placeholder={t(
-                      id
-                        ? 'datasource.user_password_edit_tips'
-                        : 'datasource.user_password_tips'
-                    )}
+                    placeholder={t('datasource.user_password_tips')}
                   />
                 </NFormItem>
                 <NFormItem
