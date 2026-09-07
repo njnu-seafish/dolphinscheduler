@@ -1764,7 +1764,7 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
             throw new ServiceException(Status.MAIN_TABLE_USING_VERSION);
         }
         // check whether there exist running workflow instance under the workflow definition
-        List<WorkflowInstance> workflowInstances = workflowInstanceService.queryByWorkflowCodeVersionStatus(
+        List<WorkflowInstanceSummaryDto> workflowInstances = workflowInstanceService.queryByWorkflowCodeVersionStatus(
                 code,
                 version,
                 WorkflowExecutionStatus.NOT_TERMINAL_STATES);
@@ -1784,17 +1784,20 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
     @Transactional
     @Override
     public void onlineWorkflowDefinition(User loginUser, Long projectCode, Long workflowDefinitionCode) {
-        projectService.checkProjectAndAuthThrowException(loginUser, projectCode, WORKFLOW_ONLINE_OFFLINE);
+        projectService.checkHasProjectWritePermissionThrowException(loginUser, projectCode);
 
         WorkflowDefinition workflowDefinition = workflowDefinitionDao.queryByCode(workflowDefinitionCode)
                 .orElseThrow(() -> new ServiceException(Status.WORKFLOW_DEFINITION_NOT_EXIST, workflowDefinitionCode));
+        if (projectCode != workflowDefinition.getProjectCode()) {
+            throw new ServiceException(Status.WORKFLOW_DEFINITION_NOT_EXIST, workflowDefinitionCode);
+        }
 
         if (ReleaseState.ONLINE.equals(workflowDefinition.getReleaseState())) {
             // do nothing if the workflow is already online
             return;
         }
 
-        checkWorkflowDefinitionIsValidated(workflowDefinition.getCode());
+        checkWorkflowDefinitionIsValidated(loginUser, workflowDefinition.getCode());
         checkAllSubWorkflowDefinitionIsOnline(workflowDefinition.getCode());
 
         workflowDefinition.setReleaseState(ReleaseState.ONLINE);
@@ -1804,10 +1807,13 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
     @Transactional
     @Override
     public void offlineWorkflowDefinition(User loginUser, Long projectCode, Long workflowDefinitionCode) {
-        projectService.checkProjectAndAuthThrowException(loginUser, projectCode, WORKFLOW_ONLINE_OFFLINE);
+        projectService.checkHasProjectWritePermissionThrowException(loginUser, projectCode);
 
         WorkflowDefinition workflowDefinition = workflowDefinitionDao.queryByCode(workflowDefinitionCode)
                 .orElseThrow(() -> new ServiceException(Status.WORKFLOW_DEFINITION_NOT_EXIST, workflowDefinitionCode));
+        if (projectCode != workflowDefinition.getProjectCode()) {
+            throw new ServiceException(Status.WORKFLOW_DEFINITION_NOT_EXIST, workflowDefinitionCode);
+        }
 
         if (ReleaseState.OFFLINE.equals(workflowDefinition.getReleaseState())) {
             // do nothing if the workflow is already offline
@@ -1887,13 +1893,17 @@ public class WorkflowDefinitionServiceImpl extends BaseServiceImpl implements Wo
         return localUserDefParams;
     }
 
-    private void checkWorkflowDefinitionIsValidated(Long workflowDefinitionCode) {
+    private void checkWorkflowDefinitionIsValidated(User loginUser, Long workflowDefinitionCode) {
         // todo: build dag check if the dag is validated
         List<WorkflowTaskRelation> workflowTaskRelations =
                 workflowTaskRelationDao.queryByWorkflowDefinitionCode(workflowDefinitionCode);
         if (CollectionUtils.isEmpty(workflowTaskRelations)) {
             throw new ServiceException(Status.WORKFLOW_DAG_IS_EMPTY);
         }
+        List<TaskDefinitionLog> taskDefinitionLogs =
+                taskDefinitionLogDao.queryTaskDefineLogList(workflowTaskRelations);
+        taskDatasourcePermissionChecker.checkPermission(loginUser, taskDefinitionLogs);
+        taskSubWorkflowPermissionChecker.checkPermission(loginUser, taskDefinitionLogs);
         // todo : check Workflow is validate
     }
 
