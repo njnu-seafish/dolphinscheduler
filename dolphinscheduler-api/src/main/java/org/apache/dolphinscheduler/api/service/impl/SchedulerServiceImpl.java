@@ -18,7 +18,6 @@
 package org.apache.dolphinscheduler.api.service.impl;
 
 import static org.apache.dolphinscheduler.api.constants.ApiFuncIdentificationConstant.PROJECT;
-import static org.apache.dolphinscheduler.api.constants.ApiFuncIdentificationConstant.WORKFLOW_ONLINE_OFFLINE;
 
 import org.apache.dolphinscheduler.api.dto.ScheduleParam;
 import org.apache.dolphinscheduler.api.enums.Status;
@@ -133,8 +132,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
 
         Project project = projectDao.queryByCode(projectCode);
 
-        // check project auth
-        projectService.checkProjectAndAuthThrowException(loginUser, project, null);
+        projectService.checkHasProjectWritePermissionThrowException(loginUser, project);
 
         // check workflow define release state
         WorkflowDefinition workflowDefinition = workflowDefinitionDao.queryByCode(workflowDefinitionCode).orElse(null);
@@ -216,8 +214,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
             throw new ServiceException(Status.WORKFLOW_DEFINITION_NOT_EXIST, workflowDefinitionCode);
         }
         Project project = projectDao.queryByCode(workflowDefinition.getProjectCode());
-        // check project auth
-        this.projectService.checkProjectAndAuthThrowException(loginUser, project, null);
+        this.projectService.checkHasProjectWritePermissionThrowException(loginUser, project);
     }
 
     /**
@@ -251,8 +248,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
 
         Project project = projectDao.queryByCode(projectCode);
 
-        // check project auth
-        projectService.checkProjectAndAuthThrowException(loginUser, project, null);
+        projectService.checkHasProjectWritePermissionThrowException(loginUser, project);
 
         // check schedule exists
         Schedule schedule = scheduleDao.queryById(id);
@@ -441,8 +437,7 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
                                                            String tenantCode,
                                                            long environmentCode) {
         Project project = projectDao.queryByCode(projectCode);
-        // check user access for project
-        projectService.checkProjectAndAuthThrowException(loginUser, project, null);
+        projectService.checkHasProjectWritePermissionThrowException(loginUser, project);
 
         // check schedule exists
         Schedule schedule = scheduleDao.queryByWorkflowDefinitionCode(workflowDefinitionCode);
@@ -466,8 +461,9 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
     @Transactional
     @Override
     public void onlineScheduler(User loginUser, Long projectCode, Integer schedulerId) {
-        projectService.checkProjectAndAuthThrowException(loginUser, projectCode, WORKFLOW_ONLINE_OFFLINE);
+        projectService.checkHasProjectWritePermissionThrowException(loginUser, projectCode);
         Schedule schedule = scheduleDao.queryById(schedulerId);
+        checkScheduleBelongsToProject(schedule, projectCode);
         doOnlineScheduler(schedule);
     }
 
@@ -503,8 +499,9 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
     @Transactional
     @Override
     public void offlineScheduler(User loginUser, Long projectCode, Integer schedulerId) {
-        projectService.checkProjectAndAuthThrowException(loginUser, projectCode, WORKFLOW_ONLINE_OFFLINE);
+        projectService.checkHasProjectWritePermissionThrowException(loginUser, projectCode);
         Schedule schedule = scheduleDao.queryById(schedulerId);
+        checkScheduleBelongsToProject(schedule, projectCode);
         doOfflineScheduler(schedule);
     }
 
@@ -530,6 +527,17 @@ public class SchedulerServiceImpl extends BaseServiceImpl implements SchedulerSe
                 workflowDefinitionDao.queryByCode(schedule.getWorkflowDefinitionCode()).orElse(null);
         Project project = projectDao.queryByCode(workflowDefinition.getProjectCode());
         schedulerApi.deleteScheduleTask(project.getId(), schedule.getId());
+    }
+
+    private void checkScheduleBelongsToProject(Schedule schedule, long projectCode) {
+        if (schedule == null) {
+            return;
+        }
+        WorkflowDefinition workflowDefinition =
+                workflowDefinitionDao.queryByCode(schedule.getWorkflowDefinitionCode()).orElse(null);
+        if (workflowDefinition == null || workflowDefinition.getProjectCode() != projectCode) {
+            throw new ServiceException(Status.SCHEDULE_NOT_EXISTS, schedule.getId());
+        }
     }
 
     private Schedule updateSchedule(Schedule schedule, WorkflowDefinition workflowDefinition,
