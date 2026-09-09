@@ -212,13 +212,6 @@ class AlertSenderTest {
         alertSender.syncTestSend(PLUGIN_DEFINE_ID, PLUGIN_INSTANCE_PARAMS);
     }
 
-    /**
-     * Simulates a mixed-version rolling upgrade scenario: an old Alert Server that
-     * does not yet know about a new AlertType enum value (e.g. TASK_RESULT) will
-     * have MyBatis map the unknown value to null. {@link AlertSender#getAlertData}
-     * must refuse to send rather than silently relabeling the alert as a
-     * workflow-instance failure.
-     */
     @Test
     void testGetAlertDataWithNullAlertType() {
         Alert alert = new Alert();
@@ -227,17 +220,12 @@ class AlertSenderTest {
         alert.setContent(CONTENT);
         alert.setAlertGroupId(ALERT_GROUP_ID);
         alert.setWarningType(WarningType.FAILURE);
-        // Simulate old Alert Server where unknown alert_type is deserialized as null
         alert.setAlertType(null);
 
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> alertSender.getAlertData(alert),
-                "getAlertData should refuse to build AlertData with null alertType");
+                () -> alertSender.getAlertData(alert));
     }
 
-    /**
-     * Ensures the normal path still works correctly when alertType is present.
-     */
     @Test
     void testGetAlertDataWithValidAlertType() {
         Alert alert = new Alert();

@@ -95,7 +95,7 @@ class AlertDaoTest extends BaseDaoTest {
         int firstCount = alertDao.addTaskResultAlert(alert);
         Assertions.assertEquals(1, firstCount);
 
-        // Second insert with the same content + workflowInstanceId + taskInstanceId + alertType should be skipped
+        // Second insert with the same dedup key should be skipped
         Alert duplicateAlert = new Alert();
         duplicateAlert.setTitle("SQL Task Result");
         duplicateAlert.setContent(content);
@@ -110,7 +110,6 @@ class AlertDaoTest extends BaseDaoTest {
         int secondCount = alertDao.addTaskResultAlert(duplicateAlert);
         Assertions.assertEquals(0, secondCount);
 
-        // Verify only one alert row exists for this workflow instance
         long count = alertDao.listAlerts(workflowInstanceId)
                 .stream()
                 .filter(a -> a.getAlertType() == AlertType.TASK_RESULT)
@@ -120,7 +119,7 @@ class AlertDaoTest extends BaseDaoTest {
 
     /**
      * Two different tasks in the same workflow instance returning identical results
-     * must NOT be treated as duplicates — each task should get its own alert.
+     * must NOT be treated as duplicates.
      */
     @Test
     void testAddTaskResultAlertDifferentTaskSameContentNotDuplicate() {
@@ -141,7 +140,7 @@ class AlertDaoTest extends BaseDaoTest {
         int firstCount = alertDao.addTaskResultAlert(alert1);
         Assertions.assertEquals(1, firstCount);
 
-        // Second task alert — same content, same workflow instance, but different task instance
+        // Second task alert — same content, different task instance
         Alert alert2 = new Alert();
         alert2.setTitle("SQL Task B Result");
         alert2.setContent(content);
@@ -155,7 +154,6 @@ class AlertDaoTest extends BaseDaoTest {
         int secondCount = alertDao.addTaskResultAlert(alert2);
         Assertions.assertEquals(1, secondCount);
 
-        // Verify two alert rows exist for this workflow instance
         long count = alertDao.listAlerts(workflowInstanceId)
                 .stream()
                 .filter(a -> a.getAlertType() == AlertType.TASK_RESULT)
@@ -164,17 +162,7 @@ class AlertDaoTest extends BaseDaoTest {
     }
 
     /**
-     * Verifies that concurrent calls to {@code addTaskResultAlert} with the same
-     * deduplication key result in exactly one inserted row.
-     * <p>
-     * The INSERT ... SELECT ... WHERE NOT EXISTS check is not atomic with the
-     * INSERT itself, so under concurrent access a race condition may cause a
-     * DuplicateKeyException from the uk_alert_dedup unique constraint. The DAO
-     * layer catches this exception and returns 0, ensuring exactly one row is
-     * inserted and no exception propagates to the caller.
-     * <p>
-     * Each losing thread must return 0, not throw an exception. If any thread throws,
-     * {@link Future#get()} will propagate the exception and fail the test.
+     * Concurrent calls to addTaskResultAlert with the same dedup key must insert exactly one row.
      */
     @Test
     void testConcurrentAddTaskResultAlertIdempotent() throws Exception {
@@ -211,22 +199,18 @@ class AlertDaoTest extends BaseDaoTest {
 
         int successCount = 0;
         for (Future<Integer> f : futures) {
-            // Future.get() propagates any exception thrown by the task.
-            // A losing thread must return 0, not throw.
             int inserted = f.get();
             if (inserted > 0) {
                 successCount++;
             }
         }
 
-        Assertions.assertEquals(1, successCount,
-                "Exactly one concurrent insert should succeed, but got " + successCount);
+        Assertions.assertEquals(1, successCount);
 
         long dbCount = alertDao.listAlerts(workflowInstanceId)
                 .stream()
                 .filter(a -> a.getAlertType() == AlertType.TASK_RESULT)
                 .count();
-        Assertions.assertEquals(1L, dbCount,
-                "Exactly one alert row should exist in the database, but found " + dbCount);
+        Assertions.assertEquals(1L, dbCount);
     }
 }

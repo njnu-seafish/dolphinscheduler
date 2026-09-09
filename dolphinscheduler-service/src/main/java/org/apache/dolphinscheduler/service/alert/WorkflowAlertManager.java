@@ -210,17 +210,11 @@ public class WorkflowAlertManager {
         alertDao.sendWorkflowTimeoutAlert(workflowInstance, projectUser);
     }
 
-    /**
-     * send task result alert
-     *
-     * @param workflowInstance workflow instance
-     * @param taskInstance     task instance
-     * @param taskAlertInfo    task alert info
-     */
     public void sendTaskResultAlert(WorkflowInstance workflowInstance,
                                     TaskInstance taskInstance,
                                     TaskAlertInfo taskAlertInfo) {
-        if (taskAlertInfo == null || taskAlertInfo.getAlertGroupId() == null) {
+        if (taskAlertInfo == null || taskAlertInfo.getAlertGroupId() == null
+                || taskAlertInfo.getAlertGroupId() <= 0) {
             return;
         }
 

@@ -112,10 +112,7 @@ public class AlertDao {
     /**
      * Insert a task-result alert idempotently. If an alert with the same sign,
      * workflow instance id and alert type already exists, the insert is skipped.
-     * <p>This guards against duplicate inserts caused by at-least-once delivery
-     * of task success lifecycle events.
      *
-     * @param alert alert, must have sign, workflowInstanceId and alertType set
      * @return insert count (1 if inserted, 0 if skipped)
      */
     public int addTaskResultAlert(Alert alert) {

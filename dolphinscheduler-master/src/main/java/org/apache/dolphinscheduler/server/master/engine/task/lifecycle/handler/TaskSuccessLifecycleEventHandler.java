@@ -17,7 +17,6 @@
 
 package org.apache.dolphinscheduler.server.master.engine.task.lifecycle.handler;
 
-import org.apache.dolphinscheduler.plugin.task.api.model.TaskAlertInfo;
 import org.apache.dolphinscheduler.server.master.engine.ILifecycleEventType;
 import org.apache.dolphinscheduler.server.master.engine.task.client.TaskExecutorClient;
 import org.apache.dolphinscheduler.server.master.engine.task.execution.ITaskExecution;
@@ -52,25 +51,15 @@ public class TaskSuccessLifecycleEventHandler extends AbstractTaskLifecycleEvent
                        final IWorkflowExecution workflowExecution,
                        final ITaskExecution taskExecution,
                        final TaskSuccessLifecycleEvent taskSuccessEvent) {
-        // 1. State transition + DB persistence (may throw if state mismatch)
         taskStateAction.onSucceedEvent(workflowExecution, taskExecution, taskSuccessEvent);
 
-        // 2. Persist task-result alert only after the success state transition is confirmed
         if (taskSuccessEvent.isNeedAlert()) {
-            final TaskAlertInfo taskAlertInfo = taskSuccessEvent.getTaskAlertInfo();
-            if (taskAlertInfo != null && taskAlertInfo.getAlertGroupId() != null
-                    && taskAlertInfo.getAlertGroupId() > 0) {
-                workflowAlertManager.sendTaskResultAlert(
-                        taskExecution.getWorkflowInstance(),
-                        taskExecution.getTaskInstance(),
-                        taskAlertInfo);
-            } else {
-                log.warn("Task: {} need alert but alertGroupId is invalid, skip sending alert",
-                        taskExecution.getName());
-            }
+            workflowAlertManager.sendTaskResultAlert(
+                    taskExecution.getWorkflowInstance(),
+                    taskExecution.getTaskInstance(),
+                    taskSuccessEvent.getTaskAlertInfo());
         }
 
-        // 3. ACK the worker — only after state transition and alert persistence are done
         taskExecutorClient.ackTaskExecutorLifecycleEvent(
                 taskExecution,
                 new ITaskExecutorLifecycleEventReporter.TaskExecutorLifecycleEventAck(

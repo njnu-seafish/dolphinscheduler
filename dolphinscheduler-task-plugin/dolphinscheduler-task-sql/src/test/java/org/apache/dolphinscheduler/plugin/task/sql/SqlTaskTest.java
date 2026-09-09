@@ -491,26 +491,25 @@ class SqlTaskTest {
         return resourceParametersHelper;
     }
 
-    /**
-     * Helper: create a SqlTask with sendEmail enabled, invoke prepareTaskResultAlert via reflection,
-     * and return the TaskExecutionContext for assertions.
-     */
     private TaskExecutionContext createSqlTaskWithAlert(ArrayNode resultArray, int displayRows, String title,
                                                         int groupId) {
-        String taskParams = "{\"type\":\"HIVE\",\"datasource\":1,\"sql\":\"select 1\""
-                + ",\"sendEmail\":true"
-                + ",\"displayRows\":" + displayRows
-                + ",\"groupId\":" + groupId
-                + (title != null ? ",\"title\":\"" + title + "\"" : "")
-                + "}";
+        SqlParameters sqlParameters = new SqlParameters();
+        sqlParameters.setType("HIVE");
+        sqlParameters.setDatasource(1);
+        sqlParameters.setSql("select 1");
+        sqlParameters.setSendEmail(true);
+        sqlParameters.setDisplayRows(displayRows);
+        sqlParameters.setGroupId(groupId);
+        if (title != null) {
+            sqlParameters.setTitle(title);
+        }
 
         TaskExecutionContext ctx = new TaskExecutionContext();
-        ctx.setTaskParams(taskParams);
+        ctx.setTaskParams(JSONUtils.toJsonString(sqlParameters));
         ctx.setTaskName("test_sql_task");
         ctx.setResourceParametersHelper(getResourceParametersHelperWithDatasourceType(DbType.HIVE));
 
         SqlTask task = new SqlTask(ctx);
-        // Call prepareTaskResultAlert via reflection
         try {
             Method method = SqlTask.class.getDeclaredMethod("prepareTaskResultAlert", ArrayNode.class);
             method.setAccessible(true);
@@ -521,60 +520,49 @@ class SqlTaskTest {
         return ctx;
     }
 
-    /**
-     * When sendEmail is true, prepareTaskResultAlert should set needAlert on TaskExecutionContext
-     * and populate TaskAlertInfo with correct alertGroupId, title, alertType and truncated content.
-     */
     @Test
-    void testPrepareTaskResultAlert_setsNeedAlertAndTaskAlertInfo() {
+    void testPrepareTaskResultAlertSetsNeedAlertAndTaskAlertInfo() {
         ArrayNode resultArray = JSONUtils.createArrayNode();
         resultArray.add(JSONUtils.parseObject("{\"id\":\"1\",\"name\":\"alice\"}"));
         resultArray.add(JSONUtils.parseObject("{\"id\":\"2\",\"name\":\"bob\"}"));
 
         TaskExecutionContext ctx = createSqlTaskWithAlert(resultArray, 10, "My Alert Title", 5);
 
-        Assertions.assertTrue(ctx.isNeedAlert(), "needAlert should be true when sendEmail is enabled");
+        Assertions.assertTrue(ctx.isNeedAlert());
 
         TaskAlertInfo alertInfo = ctx.getTaskAlertInfo();
-        Assertions.assertNotNull(alertInfo, "taskAlertInfo should not be null");
+        Assertions.assertNotNull(alertInfo);
         Assertions.assertEquals(5, alertInfo.getAlertGroupId());
         Assertions.assertEquals("My Alert Title", alertInfo.getTitle());
         Assertions.assertEquals(AlertType.TASK_RESULT, alertInfo.getAlertType());
         Assertions.assertNotNull(alertInfo.getContent());
 
-        // Content should contain all rows (within displayRows limit)
         ArrayNode contentArray = JSONUtils.parseArray(alertInfo.getContent());
         Assertions.assertEquals(2, contentArray.size());
     }
 
-    /**
-     * Alert content should be truncated to displayRows to avoid oversized RPC payload.
-     */
     @Test
-    void testPrepareTaskResultAlert_truncatesToDisplayRows() {
+    void testPrepareTaskResultAlertTruncatesToDisplayRows() {
         ArrayNode resultArray = JSONUtils.createArrayNode();
         for (int i = 0; i < 50; i++) {
             resultArray.add(JSONUtils.parseObject("{\"id\":\"" + i + "\"}"));
         }
 
-        // displayRows = 3, but result has 50 rows -> content should be truncated to 3
+        // displayRows = 3, result has 50 rows -> content should be truncated to 3
         TaskExecutionContext ctx = createSqlTaskWithAlert(resultArray, 3, null, 1);
 
         TaskAlertInfo alertInfo = ctx.getTaskAlertInfo();
         Assertions.assertNotNull(alertInfo);
 
         ArrayNode contentArray = JSONUtils.parseArray(alertInfo.getContent());
-        Assertions.assertEquals(3, contentArray.size(), "Alert content should be truncated to displayRows");
+        Assertions.assertEquals(3, contentArray.size());
         Assertions.assertEquals("0", contentArray.get(0).get("id").asText());
         Assertions.assertEquals("1", contentArray.get(1).get("id").asText());
         Assertions.assertEquals("2", contentArray.get(2).get("id").asText());
     }
 
-    /**
-     * When displayRows is 0 (unset), should default to TaskConstants.DEFAULT_DISPLAY_ROWS (10).
-     */
     @Test
-    void testPrepareTaskResultAlert_usesDefaultDisplayRowsWhenUnset() {
+    void testPrepareTaskResultAlertUsesDefaultDisplayRowsWhenUnset() {
         ArrayNode resultArray = JSONUtils.createArrayNode();
         for (int i = 0; i < 20; i++) {
             resultArray.add(JSONUtils.parseObject("{\"id\":\"" + i + "\"}"));
@@ -587,15 +575,11 @@ class SqlTaskTest {
         Assertions.assertNotNull(alertInfo);
 
         ArrayNode contentArray = JSONUtils.parseArray(alertInfo.getContent());
-        Assertions.assertEquals(TaskConstants.DEFAULT_DISPLAY_ROWS, contentArray.size(),
-                "Should default to DEFAULT_DISPLAY_ROWS when displayRows is 0");
+        Assertions.assertEquals(TaskConstants.DEFAULT_DISPLAY_ROWS, contentArray.size());
     }
 
-    /**
-     * When title is provided, it should be used as the alert title.
-     */
     @Test
-    void testPrepareTaskResultAlert_usesCustomTitle() {
+    void testPrepareTaskResultAlertUsesCustomTitle() {
         ArrayNode resultArray = JSONUtils.createArrayNode();
         resultArray.add(JSONUtils.parseObject("{\"id\":\"1\"}"));
 
@@ -606,11 +590,8 @@ class SqlTaskTest {
         Assertions.assertEquals("Custom Title", alertInfo.getTitle());
     }
 
-    /**
-     * When title is empty, should use taskName + " query result sets" as default.
-     */
     @Test
-    void testPrepareTaskResultAlert_usesDefaultTitleWhenEmpty() {
+    void testPrepareTaskResultAlertUsesDefaultTitleWhenEmpty() {
         ArrayNode resultArray = JSONUtils.createArrayNode();
         resultArray.add(JSONUtils.parseObject("{\"id\":\"1\"}"));
 
@@ -621,14 +602,10 @@ class SqlTaskTest {
         Assertions.assertEquals("test_sql_task query result sets", alertInfo.getTitle());
     }
 
-    /**
-     * When sendEmail is false, resultProcess should NOT set needAlert or taskAlertInfo.
-     */
     @Test
-    void testResultProcess_sendEmailDisabled_doesNotSetNeedAlert() throws Exception {
+    void testResultProcessSendEmailDisabledDoesNotSetNeedAlert() throws Exception {
         // Build a SqlTask with sendEmail = false
         String taskParams = "{\"type\":\"HIVE\",\"datasource\":1,\"sql\":\"select 1\",\"sendEmail\":false}";
-
         TaskExecutionContext ctx = new TaskExecutionContext();
         ctx.setTaskParams(taskParams);
         ctx.setTaskName("no_alert_task");
@@ -648,16 +625,12 @@ class SqlTaskTest {
         resultProcessMethod.setAccessible(true);
         resultProcessMethod.invoke(task, mockResultSet);
 
-        Assertions.assertFalse(ctx.isNeedAlert(), "needAlert should remain false when sendEmail is disabled");
-        Assertions.assertNull(ctx.getTaskAlertInfo(), "taskAlertInfo should remain null when sendEmail is disabled");
+        Assertions.assertFalse(ctx.isNeedAlert());
+        Assertions.assertNull(ctx.getTaskAlertInfo());
     }
 
-    /**
-     * When the query result is empty, resultProcess should still prepare the alert
-     * using the generated empty row so the user is notified that the query returned no data.
-     */
     @Test
-    void testResultProcess_emptyResultSet_prepareAlertWithEmptyRow() throws Exception {
+    void testResultProcessEmptyResultSetPreparesAlertWithEmptyRow() throws Exception {
         String taskParams = "{\"type\":\"HIVE\",\"datasource\":1,\"sql\":\"select 1\""
                 + ",\"sendEmail\":true,\"displayRows\":10,\"groupId\":3,\"title\":\"empty result\"}";
 
@@ -680,7 +653,7 @@ class SqlTaskTest {
         resultProcessMethod.setAccessible(true);
         resultProcessMethod.invoke(task, mockResultSet);
 
-        Assertions.assertTrue(ctx.isNeedAlert(), "needAlert should be true even for empty result set");
+        Assertions.assertTrue(ctx.isNeedAlert());
 
         TaskAlertInfo alertInfo = ctx.getTaskAlertInfo();
         Assertions.assertNotNull(alertInfo);
@@ -688,22 +661,14 @@ class SqlTaskTest {
         Assertions.assertEquals("empty result", alertInfo.getTitle());
         Assertions.assertEquals(AlertType.TASK_RESULT, alertInfo.getAlertType());
 
-        // Content should be the empty row
         ArrayNode contentArray = JSONUtils.parseArray(alertInfo.getContent());
-        Assertions.assertEquals(1, contentArray.size(), "Empty result alert should contain one empty row");
+        Assertions.assertEquals(1, contentArray.size());
         Assertions.assertEquals("", contentArray.get(0).get("id").asText());
         Assertions.assertEquals("", contentArray.get(0).get("name").asText());
     }
 
-    /**
-     * Verify that TaskExecutorSuccessLifecycleEvent.of() carries needAlert and taskAlertInfo
-     * from TaskExecutionContext to the event, ensuring the alert info survives the Worker→Master RPC.
-     * Since task-executor module has no test infrastructure, we validate indirectly by confirming
-     * that TaskExecutionContext properly stores and exposes these fields for the event builder to read.
-     */
     @Test
-    void testTaskExecutionContext_carriesAlertInfoForEventPropagation() {
-        // Simulate what SqlTask.prepareTaskResultAlert does
+    void testTaskExecutionContextCarriesAlertInfoForEventPropagation() {
         TaskExecutionContext ctx = new TaskExecutionContext();
         ctx.setNeedAlert(true);
 
@@ -714,14 +679,12 @@ class SqlTaskTest {
         alertInfo.setAlertType(AlertType.TASK_RESULT);
         ctx.setTaskAlertInfo(alertInfo);
 
-        // Verify the fields are retrievable — this is what TaskExecutorSuccessLifecycleEvent.of() reads
         Assertions.assertTrue(ctx.isNeedAlert());
         Assertions.assertNotNull(ctx.getTaskAlertInfo());
         Assertions.assertEquals("test title", ctx.getTaskAlertInfo().getTitle());
         Assertions.assertEquals(7, ctx.getTaskAlertInfo().getAlertGroupId());
         Assertions.assertEquals(AlertType.TASK_RESULT, ctx.getTaskAlertInfo().getAlertType());
 
-        // Verify default state when alert is not set
         TaskExecutionContext ctx2 = new TaskExecutionContext();
         Assertions.assertFalse(ctx2.isNeedAlert());
         Assertions.assertNull(ctx2.getTaskAlertInfo());

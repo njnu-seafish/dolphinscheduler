@@ -299,10 +299,7 @@ public class SqlTask extends AbstractTask {
         }
 
         if (Boolean.TRUE.equals(sqlParameters.getSendEmail())) {
-            log.info("SendAlert is enabled, preparing task result alert");
             prepareTaskResultAlert(alertArray);
-        } else {
-            log.info("SendAlert is not enabled, skip task result alert");
         }
         log.debug("execute sql result : {}", result);
         return result;
@@ -329,10 +326,7 @@ public class SqlTask extends AbstractTask {
     }
 
     /**
-     * Prepare task result alert info.
-     * Truncate the alert content to displayRows to avoid oversized RPC payload.
-     *
-     * @param resultJSONArray the full query result JSON array
+     * Prepare task result alert info, truncating content to displayRows.
      */
     private void prepareTaskResultAlert(ArrayNode resultJSONArray) {
         TaskAlertInfo taskAlertInfo = new TaskAlertInfo();
@@ -340,7 +334,6 @@ public class SqlTask extends AbstractTask {
         taskAlertInfo.setTitle(StringUtils.isNotEmpty(sqlParameters.getTitle())
                 ? sqlParameters.getTitle()
                 : taskExecutionContext.getTaskName() + " query result sets");
-        // Truncate content to displayRows to avoid oversized RPC payload
         int alertRows = sqlParameters.getDisplayRows() > 0 ? sqlParameters.getDisplayRows()
                 : TaskConstants.DEFAULT_DISPLAY_ROWS;
         alertRows = Math.min(alertRows, resultJSONArray.size());
@@ -353,7 +346,7 @@ public class SqlTask extends AbstractTask {
 
         taskExecutionContext.setNeedAlert(true);
         taskExecutionContext.setTaskAlertInfo(taskAlertInfo);
-        log.info("Prepare task result alert: title={}, alertGroupId={}, alertType={}, totalRows={}, alertRows={}",
+        log.debug("Prepare task result alert: title={}, alertGroupId={}, alertType={}, totalRows={}, alertRows={}",
                 taskAlertInfo.getTitle(), taskAlertInfo.getAlertGroupId(), taskAlertInfo.getAlertType(),
                 resultJSONArray.size(), alertRows);
     }

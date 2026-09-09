@@ -56,15 +56,8 @@ class WorkflowAlertManagerTest {
     @InjectMocks
     private WorkflowAlertManager workflowAlertManager;
 
-    /**
-     * Verify that the production path {@link WorkflowAlertManager#sendTaskResultAlert}
-     * sets {@link AlertStatus#WAIT_EXECUTION} on the Alert before persisting it.
-     * <p>If this status is not set, the alert server will never pick up the alert
-     * because it only polls records whose status is WAIT_EXECUTION (0).
-     */
     @Test
-    void sendTaskResultAlert_setsWaitExecutionStatus() {
-        // --- arrange ---
+    void testSendTaskResultAlertSetsWaitExecutionStatus() {
         WorkflowInstance workflowInstance = new WorkflowInstance();
         workflowInstance.setId(1001);
         workflowInstance.setName("test-workflow");
@@ -83,16 +76,13 @@ class WorkflowAlertManagerTest {
 
         Mockito.when(alertDao.addTaskResultAlert(Mockito.any(Alert.class))).thenReturn(1);
 
-        // --- act ---
         workflowAlertManager.sendTaskResultAlert(workflowInstance, taskInstance, taskAlertInfo);
 
-        // --- assert ---
         ArgumentCaptor<Alert> alertCaptor = ArgumentCaptor.forClass(Alert.class);
         Mockito.verify(alertDao).addTaskResultAlert(alertCaptor.capture());
 
         Alert captured = alertCaptor.getValue();
-        Assertions.assertEquals(AlertStatus.WAIT_EXECUTION, captured.getAlertStatus(),
-                "Task-result alert must be initialized with WAIT_EXECUTION so the alert server can poll it");
+        Assertions.assertEquals(AlertStatus.WAIT_EXECUTION, captured.getAlertStatus());
         Assertions.assertEquals("SQL Task Result", captured.getTitle());
         Assertions.assertEquals(WarningType.SUCCESS, captured.getWarningType());
         Assertions.assertEquals(AlertType.TASK_RESULT, captured.getAlertType());
@@ -101,15 +91,11 @@ class WorkflowAlertManagerTest {
         Assertions.assertEquals(3001L, captured.getWorkflowDefinitionCode());
         Assertions.assertEquals(1, captured.getAlertGroupId());
         Assertions.assertNotNull(captured.getCreateTime());
-        Assertions.assertEquals(5001, captured.getTaskInstanceId(),
-                "Task instance ID must be set on the alert for idempotency key differentiation");
+        Assertions.assertEquals(5001, captured.getTaskInstanceId());
     }
 
-    /**
-     * When taskAlertInfo is null, no alert should be persisted.
-     */
     @Test
-    void sendTaskResultAlert_nullTaskAlertInfo_doesNothing() {
+    void testSendTaskResultAlertNullTaskAlertInfoDoesNothing() {
         WorkflowInstance workflowInstance = new WorkflowInstance();
         workflowInstance.setId(1001);
         TaskInstance taskInstance = new TaskInstance();
@@ -119,11 +105,8 @@ class WorkflowAlertManagerTest {
         Mockito.verifyNoInteractions(alertDao);
     }
 
-    /**
-     * When alertGroupId is null, no alert should be persisted.
-     */
     @Test
-    void sendTaskResultAlert_nullAlertGroupId_doesNothing() {
+    void testSendTaskResultAlertNullAlertGroupIdDoesNothing() {
         WorkflowInstance workflowInstance = new WorkflowInstance();
         workflowInstance.setId(1001);
         TaskInstance taskInstance = new TaskInstance();
