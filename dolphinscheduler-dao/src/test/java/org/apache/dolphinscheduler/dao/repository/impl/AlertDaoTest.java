@@ -163,6 +163,8 @@ class AlertDaoTest extends BaseDaoTest {
 
     /**
      * Concurrent calls to addTaskResultAlert with the same dedup key must insert exactly one row.
+     * The uk_alert_dedup unique constraint rejects duplicates; the DAO layer catches
+     * DuplicateKeyException and returns 0.
      */
     @Test
     void testConcurrentAddTaskResultAlertIdempotent() throws Exception {

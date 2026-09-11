@@ -110,8 +110,9 @@ public class AlertDao {
     }
 
     /**
-     * Insert a task-result alert idempotently. If an alert with the same sign,
-     * workflow instance id and alert type already exists, the insert is skipped.
+     * Insert a task-result alert idempotently. The uk_alert_dedup unique constraint on
+     * (sign, workflow_instance_id, alert_type) rejects duplicates; a DuplicateKeyException
+     * is caught here and treated as a skip.
      *
      * @return insert count (1 if inserted, 0 if skipped)
      */
@@ -124,18 +125,12 @@ public class AlertDao {
         String sign = generateSign(alert);
         alert.setSign(sign);
         try {
-            int count = alertMapper.insertTaskResultAlertIfAbsent(alert);
-            if (count > 0) {
-                log.info("add task result alert to db , alert: {}", alert);
-            } else {
-                log.info("skip duplicate task result alert, sign: {}, workflowInstanceId: {}", sign,
-                        alert.getWorkflowInstanceId());
-            }
+            int count = alertMapper.insertTaskResultAlert(alert);
+            log.info("add task result alert to db , alert: {}", alert);
             return count;
         } catch (DuplicateKeyException e) {
-            // Concurrent race: NOT EXISTS passed but another thread inserted first.
-            // The uk_alert_dedup unique constraint caught it — treat as a skip.
-            log.info("skip duplicate task result alert (concurrent race), sign: {}, workflowInstanceId: {}", sign,
+            // The uk_alert_dedup unique constraint caught a duplicate — treat as a skip.
+            log.info("skip duplicate task result alert, sign: {}, workflowInstanceId: {}", sign,
                     alert.getWorkflowInstanceId());
             return 0;
         }
